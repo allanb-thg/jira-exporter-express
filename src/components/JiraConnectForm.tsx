@@ -15,22 +15,41 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
 
   const validateJiraCredentials = async (domain: string, email: string, token: string) => {
     try {
-      // Test API call to JIRA's myself endpoint which is commonly used for validation
-      const response = await fetch(`${domain}/rest/api/2/myself`, {
+      // Clean up the domain URL to ensure proper formatting
+      const cleanDomain = domain.replace(/\/+$/, '');
+      
+      // Test API call to JIRA's myself endpoint with CORS headers
+      const response = await fetch(`${cleanDomain}/rest/api/2/myself`, {
         method: 'GET',
         headers: {
           'Authorization': `Basic ${btoa(`${email}:${token}`)}`,
-          'Accept': 'application/json'
-        }
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Atlassian-Token': 'no-check'
+        },
+        mode: 'cors',
+        credentials: 'include'
       });
 
       if (!response.ok) {
-        throw new Error('Invalid credentials');
+        if (response.status === 401) {
+          throw new Error('Invalid credentials');
+        } else if (response.status === 403) {
+          throw new Error('Access forbidden - please check your JIRA permissions');
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
-      return data.emailAddress === email; // Additional validation checking if returned email matches
-    } catch (error) {
+      return data.emailAddress === email;
+    } catch (error: any) {
+      if (error.message.includes('CORS')) {
+        toast.error(
+          "CORS error detected. Please ensure CORS is enabled in your JIRA instance or use a CORS proxy.",
+          { duration: 6000 }
+        );
+      }
+      console.error('JIRA validation error:', error);
       return false;
     }
   };
@@ -43,6 +62,12 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
       return;
     }
 
+    // Basic domain format validation
+    if (!domain.startsWith('http')) {
+      toast.error("Domain should start with http:// or https://");
+      return;
+    }
+
     setIsValidating(true);
     
     try {
@@ -52,10 +77,13 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
         toast.success("Successfully connected to JIRA");
         onConnect(domain, email, token);
       } else {
-        toast.error("Invalid JIRA credentials. Please check your domain, email, and API token.");
+        toast.error(
+          "Unable to connect to JIRA. Please check your credentials and ensure CORS is enabled.",
+          { duration: 5000 }
+        );
       }
     } catch (error) {
-      toast.error("Failed to connect to JIRA. Please check your credentials.");
+      toast.error("Failed to connect to JIRA. Please check your credentials and try again.");
     } finally {
       setIsValidating(false);
     }
@@ -73,6 +101,9 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
         />
+        <p className="text-xs text-gray-500 mt-1">
+          Example: https://your-company.atlassian.net
+        </p>
       </div>
       <div>
         <label htmlFor="email" className="block text-sm font-medium mb-1">
@@ -97,6 +128,17 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
           value={token}
           onChange={(e) => setToken(e.target.value)}
         />
+        <p className="text-xs text-gray-500 mt-1">
+          Get your API token from{" "}
+          <a
+            href="https://id.atlassian.com/manage/api-tokens"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            Atlassian Account Settings
+          </a>
+        </p>
       </div>
       <Button type="submit" className="w-full" disabled={isValidating}>
         {isValidating ? "Validating..." : "Connect to JIRA"}
