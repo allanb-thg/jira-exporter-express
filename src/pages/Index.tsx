@@ -5,6 +5,7 @@ import { ExportProgress } from "@/components/ExportProgress";
 import { toast } from "sonner";
 
 const CORS_PROXY = "https://cors-anywhere.herokuapp.com/";
+const MAX_RESULTS = 100; // Maximum results per request
 
 const Index = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -31,11 +32,12 @@ const Index = () => {
         : ""
     }`;
 
-    const url = `${CORS_PROXY}${credentials.domain}/rest/api/2/search?jql=${encodeURIComponent(
+    // First, get total number of issues
+    const countUrl = `${CORS_PROXY}${credentials.domain}/rest/api/2/search?jql=${encodeURIComponent(
       jqlQuery
-    )}`;
+    )}&maxResults=0`;
 
-    const response = await fetch(url, {
+    const countResponse = await fetch(countUrl, {
       headers: {
         Authorization: `Basic ${btoa(
           `${credentials.email}:${credentials.token}`
@@ -44,12 +46,47 @@ const Index = () => {
       },
     });
 
-    if (!response.ok) {
-      throw new Error("Failed to fetch JIRA issues");
+    if (!countResponse.ok) {
+      throw new Error("Failed to fetch JIRA issues count");
     }
 
-    const data = await response.json();
-    return data.issues || [];
+    const countData = await countResponse.json();
+    const total = countData.total;
+    let allIssues = [];
+
+    // Fetch issues in batches
+    for (let startAt = 0; startAt < total; startAt += MAX_RESULTS) {
+      const url = `${CORS_PROXY}${credentials.domain}/rest/api/2/search?jql=${encodeURIComponent(
+        jqlQuery
+      )}&maxResults=${MAX_RESULTS}&startAt=${startAt}`;
+
+      setProgress({
+        current: allIssues.length,
+        total,
+        status: `Fetching issues ${startAt + 1} to ${Math.min(
+          startAt + MAX_RESULTS,
+          total
+        )} of ${total}...`,
+      });
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Basic ${btoa(
+            `${credentials.email}:${credentials.token}`
+          )}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch JIRA issues");
+      }
+
+      const data = await response.json();
+      allIssues = [...allIssues, ...(data.issues || [])];
+    }
+
+    return allIssues;
   };
 
   const handleStartExport = async (config: ExportConfiguration) => {
