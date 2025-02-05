@@ -3,9 +3,10 @@ import { JiraConnectForm } from "@/components/JiraConnectForm";
 import { ExportConfig, ExportConfiguration } from "@/components/ExportConfig";
 import { ExportProgress } from "@/components/ExportProgress";
 import { toast } from "sonner";
+import JSZip from "jszip";
 
 const CORS_PROXY = "https://cors-anywhere.herokuapp.com/";
-const MAX_RESULTS = 100; // Maximum results per request
+const MAX_RESULTS = 100;
 
 const Index = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -145,13 +146,13 @@ const Index = () => {
       const issues = await fetchJiraIssues(config);
       setProgress({ current: 0, total: issues.length, status: "Starting export..." });
 
-      // Process each issue
       const processedIssues = [];
+      const zip = new JSZip();
+      
       for (let i = 0; i < issues.length; i++) {
         const issue = issues[i];
         let attachmentData = [];
         
-        // Process attachments if needed
         if (config.includeAttachments) {
           setProgress({
             current: i + 1,
@@ -163,6 +164,10 @@ const Index = () => {
           for (const attachment of attachments) {
             const downloadedAttachment = await downloadAttachment(attachment);
             if (downloadedAttachment) {
+              // Add to zip file with issue key in folder structure
+              const folderPath = `attachments/${issue.key}/`;
+              zip.file(folderPath + downloadedAttachment.filename, downloadedAttachment.content);
+              
               attachmentData.push({
                 filename: downloadedAttachment.filename,
                 size: downloadedAttachment.size,
@@ -192,6 +197,19 @@ const Index = () => {
       // Generate and download CSV
       const csv = convertToCSV(processedIssues);
       downloadCSV(csv, `jira-export-${config.projectKey}.csv`);
+
+      // Generate and download attachments zip if there are any
+      if (config.includeAttachments) {
+        const zipContent = await zip.generateAsync({ type: "blob" });
+        const zipUrl = URL.createObjectURL(zipContent);
+        const link = document.createElement("a");
+        link.href = zipUrl;
+        link.download = `jira-attachments-${config.projectKey}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(zipUrl);
+      }
 
       setIsExporting(false);
       toast.success("Export completed successfully!");
