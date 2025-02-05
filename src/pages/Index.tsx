@@ -23,6 +23,54 @@ const Index = () => {
     setIsConnected(true);
   };
 
+  const fetchAttachments = async (issueKey: string) => {
+    if (!credentials) return [];
+    
+    const url = `${CORS_PROXY}${credentials.domain}/rest/api/2/issue/${issueKey}?fields=attachment`;
+    
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Basic ${btoa(`${credentials.email}:${credentials.token}`)}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Failed to fetch attachments for issue ${issueKey}`);
+      return [];
+    }
+
+    const data = await response.json();
+    return data.fields.attachment || [];
+  };
+
+  const downloadAttachment = async (attachment: any) => {
+    if (!credentials) return null;
+    
+    try {
+      const response = await fetch(`${CORS_PROXY}${attachment.content}`, {
+        headers: {
+          Authorization: `Basic ${btoa(`${credentials.email}:${credentials.token}`)}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to download attachment: ${attachment.filename}`);
+      }
+
+      const blob = await response.blob();
+      return {
+        filename: attachment.filename,
+        content: blob,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+      };
+    } catch (error) {
+      console.error(`Error downloading attachment: ${attachment.filename}`, error);
+      return null;
+    }
+  };
+
   const fetchJiraIssues = async (config: ExportConfiguration) => {
     if (!credentials) return [];
     
@@ -101,15 +149,28 @@ const Index = () => {
       const processedIssues = [];
       for (let i = 0; i < issues.length; i++) {
         const issue = issues[i];
+        let attachmentData = [];
         
         // Process attachments if needed
         if (config.includeAttachments) {
-          // Add attachment processing logic here
           setProgress({
             current: i + 1,
             total: issues.length,
-            status: `Processing attachments for ${issue.key}...`,
+            status: `Fetching attachments for ${issue.key}...`,
           });
+          
+          const attachments = await fetchAttachments(issue.key);
+          for (const attachment of attachments) {
+            const downloadedAttachment = await downloadAttachment(attachment);
+            if (downloadedAttachment) {
+              attachmentData.push({
+                filename: downloadedAttachment.filename,
+                size: downloadedAttachment.size,
+                mimeType: downloadedAttachment.mimeType,
+                url: attachment.content,
+              });
+            }
+          }
         }
 
         processedIssues.push({
@@ -118,7 +179,7 @@ const Index = () => {
           description: issue.fields.description,
           status: issue.fields.status.name,
           created: issue.fields.created,
-          // Add more fields as needed
+          attachments: attachmentData,
         });
 
         setProgress({
@@ -148,7 +209,13 @@ const Index = () => {
     const rows = [
       headers.join(","),
       ...items.map(item =>
-        headers.map(header => JSON.stringify(item[header] || "")).join(",")
+        headers.map(header => {
+          const value = item[header];
+          if (header === 'attachments' && Array.isArray(value)) {
+            return JSON.stringify(value.map(att => att.filename)).replace(/"/g, '""');
+          }
+          return JSON.stringify(value || "").replace(/"/g, '""');
+        }).join(",")
       ),
     ];
     
