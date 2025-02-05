@@ -18,17 +18,18 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
       // Clean up the domain URL to ensure proper formatting
       const cleanDomain = domain.replace(/\/+$/, '');
       
-      // Test API call to JIRA's myself endpoint with CORS headers
-      const response = await fetch(`${cleanDomain}/rest/api/2/myself`, {
+      // Use a CORS proxy service
+      const corsProxy = 'https://cors-anywhere.herokuapp.com/';
+      const apiUrl = `${corsProxy}${cleanDomain}/rest/api/2/myself`;
+      
+      const response = await fetch(apiUrl, {
         method: 'GET',
         headers: {
           'Authorization': `Basic ${btoa(`${email}:${token}`)}`,
           'Accept': 'application/json',
           'Content-Type': 'application/json',
-          'X-Atlassian-Token': 'no-check'
-        },
-        mode: 'cors',
-        credentials: 'include'
+          'Origin': window.location.origin
+        }
       });
 
       if (!response.ok) {
@@ -43,13 +44,19 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
       const data = await response.json();
       return data.emailAddress === email;
     } catch (error: any) {
-      if (error.message.includes('CORS')) {
+      console.error('JIRA validation error:', error);
+      
+      if (error.message.includes('cors-anywhere')) {
         toast.error(
-          "CORS error detected. Please ensure CORS is enabled in your JIRA instance or use a CORS proxy.",
-          { duration: 6000 }
+          "Please activate the CORS proxy by visiting https://cors-anywhere.herokuapp.com/corsdemo first",
+          { duration: 8000 }
+        );
+      } else {
+        toast.error(
+          error.message || "Failed to connect to JIRA. Please check your credentials.",
+          { duration: 5000 }
         );
       }
-      console.error('JIRA validation error:', error);
       return false;
     }
   };
@@ -78,7 +85,7 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
         onConnect(domain, email, token);
       } else {
         toast.error(
-          "Unable to connect to JIRA. Please check your credentials and ensure CORS is enabled.",
+          "Unable to connect to JIRA. Please check your credentials and try again.",
           { duration: 5000 }
         );
       }
@@ -143,6 +150,18 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
       <Button type="submit" className="w-full" disabled={isValidating}>
         {isValidating ? "Validating..." : "Connect to JIRA"}
       </Button>
+      <p className="text-xs text-gray-500 mt-2">
+        Note: Before connecting, please visit{" "}
+        <a
+          href="https://cors-anywhere.herokuapp.com/corsdemo"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-500 hover:underline"
+        >
+          CORS Anywhere Demo
+        </a>
+        {" "}and click "Request temporary access" to activate the CORS proxy.
+      </p>
     </form>
   );
 }
