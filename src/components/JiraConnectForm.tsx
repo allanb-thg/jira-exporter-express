@@ -11,14 +11,54 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
   const [domain, setDomain] = useState("");
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
+  const [isValidating, setIsValidating] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const validateJiraCredentials = async (domain: string, email: string, token: string) => {
+    try {
+      // Test API call to JIRA's myself endpoint which is commonly used for validation
+      const response = await fetch(`${domain}/rest/api/2/myself`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${btoa(`${email}:${token}`)}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Invalid credentials');
+      }
+
+      const data = await response.json();
+      return data.emailAddress === email; // Additional validation checking if returned email matches
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (!domain || !email || !token) {
       toast.error("Please fill in all fields");
       return;
     }
-    onConnect(domain, email, token);
+
+    setIsValidating(true);
+    
+    try {
+      const isValid = await validateJiraCredentials(domain, email, token);
+      
+      if (isValid) {
+        toast.success("Successfully connected to JIRA");
+        onConnect(domain, email, token);
+      } else {
+        toast.error("Invalid JIRA credentials. Please check your domain, email, and API token.");
+      }
+    } catch (error) {
+      toast.error("Failed to connect to JIRA. Please check your credentials.");
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   return (
@@ -58,8 +98,8 @@ export function JiraConnectForm({ onConnect }: JiraConnectFormProps) {
           onChange={(e) => setToken(e.target.value)}
         />
       </div>
-      <Button type="submit" className="w-full">
-        Connect to JIRA
+      <Button type="submit" className="w-full" disabled={isValidating}>
+        {isValidating ? "Validating..." : "Connect to JIRA"}
       </Button>
     </form>
   );
