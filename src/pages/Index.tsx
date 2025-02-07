@@ -3,6 +3,7 @@ import { useState } from "react";
 import { JiraConnectForm } from "@/components/JiraConnectForm";
 import { ExportConfig, ExportConfiguration } from "@/components/ExportConfig";
 import { ExportProgress } from "@/components/ExportProgress";
+import { RateLimitCountdown } from "@/components/RateLimitCountdown";
 import { toast } from "sonner";
 import JSZip from "jszip";
 import { useJiraOperations } from "@/hooks/useJiraOperations";
@@ -20,6 +21,8 @@ const Index = () => {
     fetchAttachments,
     downloadAttachment,
     fetchJiraIssues,
+    rateLimitInfo,
+    resetRateLimit,
   } = useJiraOperations();
 
   const handleConnect = async (domain: string, email: string, token: string) => {
@@ -130,8 +133,10 @@ const Index = () => {
       toast.success("Export completed successfully!");
     } catch (error) {
       console.error("Export failed:", error);
-      toast.error("Export failed. Please check your connection and try again.");
-      setIsExporting(false);
+      if (error instanceof Error && error.message !== "Rate limit exceeded") {
+        toast.error("Export failed. Please check your connection and try again.");
+        setIsExporting(false);
+      }
     }
   };
 
@@ -144,7 +149,12 @@ const Index = () => {
           </h1>
           
           <div className="bg-white rounded-lg shadow-sm p-6 space-y-8">
-            {!isConnected ? (
+            {rateLimitInfo.isLimited ? (
+              <RateLimitCountdown
+                durationInSeconds={rateLimitInfo.resetTime}
+                onComplete={resetRateLimit}
+              />
+            ) : !isConnected ? (
               <>
                 <h2 className="text-xl font-semibold mb-4">
                   Connect to JIRA
