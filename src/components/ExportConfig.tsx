@@ -1,6 +1,9 @@
+
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { useState } from "react";
 
 interface ExportConfigProps {
@@ -12,6 +15,9 @@ export interface ExportConfiguration {
   includeAttachments: boolean;
   dateFrom: string;
   dateTo: string;
+  exportType: "download" | "github";
+  githubRepo?: string;
+  githubBranch?: string;
 }
 
 export function ExportConfig({ onStartExport }: ExportConfigProps) {
@@ -20,6 +26,9 @@ export function ExportConfig({ onStartExport }: ExportConfigProps) {
     includeAttachments: true,
     dateFrom: "",
     dateTo: "",
+    exportType: "download",
+    githubRepo: "",
+    githubBranch: "main"
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -28,7 +37,7 @@ export function ExportConfig({ onStartExport }: ExportConfigProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 w-full max-w-md">
+    <form onSubmit={handleSubmit} className="space-y-6 w-full max-w-md">
       <div>
         <label htmlFor="projectKey" className="block text-sm font-medium mb-1">
           Project Key
@@ -42,6 +51,7 @@ export function ExportConfig({ onStartExport }: ExportConfigProps) {
           }
         />
       </div>
+
       <div className="flex items-center space-x-2">
         <Checkbox
           id="attachments"
@@ -57,6 +67,7 @@ export function ExportConfig({ onStartExport }: ExportConfigProps) {
           Include Attachments
         </label>
       </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label htmlFor="dateFrom" className="block text-sm font-medium mb-1">
@@ -83,6 +94,58 @@ export function ExportConfig({ onStartExport }: ExportConfigProps) {
           />
         </div>
       </div>
+
+      <div className="space-y-4">
+        <Label>Export Type</Label>
+        <RadioGroup
+          value={config.exportType}
+          onValueChange={(value: "download" | "github") =>
+            setConfig({ ...config, exportType: value })
+          }
+          className="flex flex-col space-y-2"
+        >
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="download" id="download" />
+            <Label htmlFor="download">Download Locally</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="github" id="github" />
+            <Label htmlFor="github">Send to GitHub</Label>
+          </div>
+        </RadioGroup>
+      </div>
+
+      {config.exportType === "github" && (
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="githubRepo" className="block text-sm font-medium mb-1">
+              GitHub Repository URL
+            </label>
+            <Input
+              id="githubRepo"
+              placeholder="https://github.com/username/repo"
+              value={config.githubRepo}
+              onChange={(e) =>
+                setConfig({ ...config, githubRepo: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <label htmlFor="githubBranch" className="block text-sm font-medium mb-1">
+              Branch Name
+            </label>
+            <Input
+              id="githubBranch"
+              placeholder="main"
+              value={config.githubBranch}
+              onChange={(e) =>
+                setConfig({ ...config, githubBranch: e.target.value })
+              }
+            />
+          </div>
+        </div>
+      )}
+
       <Button type="submit" className="w-full">
         Start Export
       </Button>

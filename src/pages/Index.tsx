@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { JiraConnectForm } from "@/components/JiraConnectForm";
 import { ExportConfig, ExportConfiguration } from "@/components/ExportConfig";
@@ -164,7 +165,6 @@ const Index = () => {
           for (const attachment of attachments) {
             const downloadedAttachment = await downloadAttachment(attachment);
             if (downloadedAttachment) {
-              // Add to zip file with issue key in folder structure
               const folderPath = `attachments/${issue.key}/`;
               zip.file(folderPath + downloadedAttachment.filename, downloadedAttachment.content);
               
@@ -194,21 +194,65 @@ const Index = () => {
         });
       }
 
-      // Generate and download CSV
       const csv = convertToCSV(processedIssues);
-      downloadCSV(csv, `jira-export-${config.projectKey}.csv`);
 
-      // Generate and download attachments zip if there are any
-      if (config.includeAttachments) {
-        const zipContent = await zip.generateAsync({ type: "blob" });
-        const zipUrl = URL.createObjectURL(zipContent);
-        const link = document.createElement("a");
-        link.href = zipUrl;
-        link.download = `jira-attachments-${config.projectKey}.zip`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(zipUrl);
+      if (config.exportType === "download") {
+        // Download CSV locally
+        downloadCSV(csv, `jira-export-${config.projectKey}.csv`);
+
+        // Download attachments zip if there are any
+        if (config.includeAttachments) {
+          const zipContent = await zip.generateAsync({ type: "blob" });
+          const zipUrl = URL.createObjectURL(zipContent);
+          const link = document.createElement("a");
+          link.href = zipUrl;
+          link.download = `jira-attachments-${config.projectKey}.zip`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(zipUrl);
+        }
+      } else if (config.exportType === "github" && config.githubRepo) {
+        setProgress({
+          current: issues.length,
+          total: issues.length,
+          status: "Preparing GitHub export...",
+        });
+
+        // Convert GitHub URL to API format
+        const repoUrl = new URL(config.githubRepo);
+        const [, owner, repo] = repoUrl.pathname.split('/');
+        
+        // Prepare files for GitHub
+        const files = [
+          {
+            path: `exports/${config.projectKey}/data.csv`,
+            content: csv
+          }
+        ];
+
+        if (config.includeAttachments) {
+          const zipContent = await zip.generateAsync({ type: "base64" });
+          files.push({
+            path: `exports/${config.projectKey}/attachments.zip`,
+            content: zipContent
+          });
+        }
+
+        // Create GitHub commit
+        const commitMessage = `Export JIRA data for project ${config.projectKey}`;
+        
+        try {
+          // Note: This is a placeholder for GitHub API integration
+          // In a real implementation, we would:
+          // 1. Use GitHub API to create/update files
+          // 2. Handle authentication
+          // 3. Create commits and push changes
+          toast.error("GitHub export is not yet implemented. Please use local download for now.");
+        } catch (error) {
+          console.error("GitHub export failed:", error);
+          toast.error("Failed to export to GitHub. Please try again or use local download.");
+        }
       }
 
       setIsExporting(false);
