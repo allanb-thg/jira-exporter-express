@@ -40,15 +40,16 @@ export const downloadCSV = (csv: string, filename: string) => {
 export const handleGitHubExport = async (
   config: ExportConfiguration,
   files: Array<{ path: string; content: string; encoding: string }>,
-  projectKey: string
+  projectKey: string,
+  issues: any[]
 ) => {
   try {
     // Clean and parse the repository URL
     const repoUrl = new URL(config.githubRepo || "");
     const [, owner, repoName] = repoUrl.pathname
-      .replace(/\.git$/, "") // Remove .git if present
+      .replace(/\.git$/, "")
       .split('/')
-      .filter(Boolean); // Remove empty strings
+      .filter(Boolean);
 
     if (!owner || !repoName) {
       throw new Error('Invalid GitHub repository URL');
@@ -77,9 +78,42 @@ export const handleGitHubExport = async (
       })
     ));
 
-    // Note: The Projects v2 API requires different permissions and setup
-    // For now, we'll focus on file upload only
-    toast.success('Successfully exported files to GitHub repository!');
+    // Get or create a GitHub Project
+    const projectResponse = await fetch(`https://api.github.com/repos/${owner}/${repoName}/projects`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.githubToken}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: JSON.stringify({
+        name: `JIRA Export - ${projectKey}`,
+        body: `Imported from JIRA project ${projectKey}`
+      })
+    });
+
+    if (!projectResponse.ok) {
+      throw new Error('Failed to create GitHub Project');
+    }
+
+    const projectData = await projectResponse.json();
+
+    // Create project items for each JIRA issue
+    for (const issue of issues) {
+      await fetch(`https://api.github.com/projects/${projectData.id}/columns/1/cards`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.githubToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'X-GitHub-Api-Version': '2022-11-28'
+        },
+        body: JSON.stringify({
+          note: `JIRA Issue: ${issue.key}\n\n${issue.fields.summary}\n\n${issue.fields.description || ''}\n\nStatus: ${issue.fields.status.name}`
+        })
+      });
+    }
+
+    toast.success('Successfully exported files and created GitHub Project items!');
   } catch (error) {
     console.error('GitHub export failed:', error);
     toast.error(error instanceof Error ? error.message : 'Failed to export to GitHub. Please check your credentials and try again.');

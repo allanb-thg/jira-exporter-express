@@ -123,7 +123,7 @@ const Index = () => {
           });
         }
 
-        await handleGitHubExport(config, files, config.projectKey);
+        await handleGitHubExport(config, files, config.projectKey, issues);
       }
 
       setIsExporting(false);
