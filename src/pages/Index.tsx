@@ -197,10 +197,8 @@ const Index = () => {
       const csv = convertToCSV(processedIssues);
 
       if (config.exportType === "download") {
-        // Download CSV locally
         downloadCSV(csv, `jira-export-${config.projectKey}.csv`);
 
-        // Download attachments zip if there are any
         if (config.includeAttachments) {
           const zipContent = await zip.generateAsync({ type: "blob" });
           const zipUrl = URL.createObjectURL(zipContent);
@@ -219,39 +217,73 @@ const Index = () => {
           status: "Preparing GitHub export...",
         });
 
-        // Convert GitHub URL to API format
-        const repoUrl = new URL(config.githubRepo);
-        const [, owner, repo] = repoUrl.pathname.split('/');
-        
-        // Prepare files for GitHub
-        const files = [
-          {
-            path: `exports/${config.projectKey}/data.csv`,
-            content: csv
-          }
-        ];
-
-        if (config.includeAttachments) {
-          const zipContent = await zip.generateAsync({ type: "base64" });
-          files.push({
-            path: `exports/${config.projectKey}/attachments.zip`,
-            content: zipContent
-          });
-        }
-
-        // Create GitHub commit
-        const commitMessage = `Export JIRA data for project ${config.projectKey}`;
-        
         try {
-          // Note: This is a placeholder for GitHub API integration
-          // In a real implementation, we would:
-          // 1. Use GitHub API to create/update files
-          // 2. Handle authentication
-          // 3. Create commits and push changes
-          toast.error("GitHub export is not yet implemented. Please use local download for now.");
+          // Extract owner and repo from GitHub URL
+          const repoUrl = new URL(config.githubRepo);
+          const [, owner, repo] = repoUrl.pathname.split('/');
+          
+          // Create project name based on JIRA project
+          const projectName = `JIRA Export - ${config.projectKey}`;
+          
+          // Prepare the files for upload
+          const files = [];
+          
+          // Add CSV data
+          files.push({
+            path: `data/${config.projectKey}/issues.csv`,
+            content: btoa(csv), // Base64 encode the content
+            encoding: 'base64'
+          });
+
+          // Add attachments if included
+          if (config.includeAttachments) {
+            const zipContent = await zip.generateAsync({ type: "base64" });
+            files.push({
+              path: `data/${config.projectKey}/attachments.zip`,
+              content: zipContent,
+              encoding: 'base64'
+            });
+          }
+
+          // Create GitHub project
+          const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/projects`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${config.githubToken}`,
+              'Accept': 'application/vnd.github.v3+json'
+            },
+            body: JSON.stringify({
+              name: projectName,
+              body: `JIRA export for project ${config.projectKey}`
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to create GitHub project');
+          }
+
+          const projectData = await response.json();
+
+          // Upload files to the repository
+          for (const file of files) {
+            await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${config.githubToken}`,
+                'Accept': 'application/vnd.github.v3+json'
+              },
+              body: JSON.stringify({
+                message: `Add ${file.path} from JIRA export`,
+                content: file.content,
+                branch: config.githubBranch
+              })
+            });
+          }
+
+          toast.success('Successfully exported to GitHub project!');
         } catch (error) {
-          console.error("GitHub export failed:", error);
-          toast.error("Failed to export to GitHub. Please try again or use local download.");
+          console.error('GitHub export failed:', error);
+          toast.error('Failed to export to GitHub. Please check your credentials and try again.');
         }
       }
 

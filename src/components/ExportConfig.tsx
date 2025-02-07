@@ -18,6 +18,7 @@ export interface ExportConfiguration {
   exportType: "download" | "github";
   githubRepo?: string;
   githubBranch?: string;
+  githubToken?: string;
 }
 
 export function ExportConfig({ onStartExport }: ExportConfigProps) {
@@ -28,7 +29,8 @@ export function ExportConfig({ onStartExport }: ExportConfigProps) {
     dateTo: "",
     exportType: "download",
     githubRepo: "",
-    githubBranch: "main"
+    githubBranch: "main",
+    githubToken: ""
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -142,6 +144,23 @@ export function ExportConfig({ onStartExport }: ExportConfigProps) {
                 setConfig({ ...config, githubBranch: e.target.value })
               }
             />
+          </div>
+          <div>
+            <label htmlFor="githubToken" className="block text-sm font-medium mb-1">
+              GitHub Personal Access Token
+            </label>
+            <Input
+              id="githubToken"
+              type="password"
+              placeholder="ghp_xxxxxxxxxxxx"
+              value={config.githubToken}
+              onChange={(e) =>
+                setConfig({ ...config, githubToken: e.target.value })
+              }
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              Token needs repo and project permissions
+            </p>
           </div>
         </div>
       )}
