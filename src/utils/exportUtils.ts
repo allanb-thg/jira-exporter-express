@@ -43,45 +43,46 @@ export const handleGitHubExport = async (
   projectKey: string
 ) => {
   try {
+    // Clean and parse the repository URL
     const repoUrl = new URL(config.githubRepo || "");
-    const [, owner, repo] = repoUrl.pathname.split('/');
-    const projectName = `JIRA Export - ${projectKey}`;
+    const [, owner, repoName] = repoUrl.pathname
+      .replace(/\.git$/, "") // Remove .git if present
+      .split('/')
+      .filter(Boolean); // Remove empty strings
 
-    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/projects`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.githubToken}`,
-        'Accept': 'application/vnd.github.v3+json'
-      },
-      body: JSON.stringify({
-        name: projectName,
-        body: `JIRA export for project ${projectKey}`
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to create GitHub project');
+    if (!owner || !repoName) {
+      throw new Error('Invalid GitHub repository URL');
     }
 
+    // First, create the files in the repository
     await Promise.all(files.map(file =>
-      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`, {
+      fetch(`https://api.github.com/repos/${owner}/${repoName}/contents/${file.path}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${config.githubToken}`,
-          'Accept': 'application/vnd.github.v3+json'
+          'Accept': 'application/vnd.github.v3+json',
+          'X-GitHub-Api-Version': '2022-11-28'
         },
         body: JSON.stringify({
           message: `Add ${file.path} from JIRA export`,
           content: file.content,
-          branch: config.githubBranch
+          branch: config.githubBranch || 'main'
         })
+      }).then(async (response) => {
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`GitHub API Error: ${errorData.message}`);
+        }
+        return response.json();
       })
     ));
 
-    toast.success('Successfully exported to GitHub project!');
+    // Note: The Projects v2 API requires different permissions and setup
+    // For now, we'll focus on file upload only
+    toast.success('Successfully exported files to GitHub repository!');
   } catch (error) {
     console.error('GitHub export failed:', error);
-    toast.error('Failed to export to GitHub. Please check your credentials and try again.');
+    toast.error(error instanceof Error ? error.message : 'Failed to export to GitHub. Please check your credentials and try again.');
     throw error;
   }
 };
