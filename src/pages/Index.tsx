@@ -5,138 +5,27 @@ import { ExportConfig, ExportConfiguration } from "@/components/ExportConfig";
 import { ExportProgress } from "@/components/ExportProgress";
 import { toast } from "sonner";
 import JSZip from "jszip";
-
-const CORS_PROXY = "https://cors-anywhere.herokuapp.com/";
-const MAX_RESULTS = 100;
+import { useJiraOperations } from "@/hooks/useJiraOperations";
+import { convertToCSV, downloadCSV, handleGitHubExport } from "@/utils/exportUtils";
 
 const Index = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0, status: "" });
-  const [credentials, setCredentials] = useState<{
-    domain: string;
-    email: string;
-    token: string;
-  } | null>(null);
+  
+  const {
+    credentials,
+    setCredentials,
+    progress,
+    setProgress,
+    fetchAttachments,
+    downloadAttachment,
+    fetchJiraIssues,
+  } = useJiraOperations();
 
   const handleConnect = async (domain: string, email: string, token: string) => {
     setCredentials({ domain, email, token });
     toast.success("Successfully connected to JIRA");
     setIsConnected(true);
-  };
-
-  const fetchAttachments = async (issueKey: string) => {
-    if (!credentials) return [];
-    
-    const url = `${CORS_PROXY}${credentials.domain}/rest/api/2/issue/${issueKey}?fields=attachment`;
-    
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Basic ${btoa(`${credentials.email}:${credentials.token}`)}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`Failed to fetch attachments for issue ${issueKey}`);
-      return [];
-    }
-
-    const data = await response.json();
-    return data.fields.attachment || [];
-  };
-
-  const downloadAttachment = async (attachment: any) => {
-    if (!credentials) return null;
-    
-    try {
-      const response = await fetch(`${CORS_PROXY}${attachment.content}`, {
-        headers: {
-          Authorization: `Basic ${btoa(`${credentials.email}:${credentials.token}`)}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to download attachment: ${attachment.filename}`);
-      }
-
-      const blob = await response.blob();
-      return {
-        filename: attachment.filename,
-        content: blob,
-        mimeType: attachment.mimeType,
-        size: attachment.size,
-      };
-    } catch (error) {
-      console.error(`Error downloading attachment: ${attachment.filename}`, error);
-      return null;
-    }
-  };
-
-  const fetchJiraIssues = async (config: ExportConfiguration) => {
-    if (!credentials) return [];
-    
-    const jqlQuery = `project = ${config.projectKey} ${
-      config.dateFrom || config.dateTo
-        ? `AND created >= "${config.dateFrom}" AND created <= "${config.dateTo}"`
-        : ""
-    }`;
-
-    // First, get total number of issues
-    const countUrl = `${CORS_PROXY}${credentials.domain}/rest/api/2/search?jql=${encodeURIComponent(
-      jqlQuery
-    )}&maxResults=0`;
-
-    const countResponse = await fetch(countUrl, {
-      headers: {
-        Authorization: `Basic ${btoa(
-          `${credentials.email}:${credentials.token}`
-        )}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!countResponse.ok) {
-      throw new Error("Failed to fetch JIRA issues count");
-    }
-
-    const countData = await countResponse.json();
-    const total = countData.total;
-    let allIssues = [];
-
-    // Fetch issues in batches
-    for (let startAt = 0; startAt < total; startAt += MAX_RESULTS) {
-      const url = `${CORS_PROXY}${credentials.domain}/rest/api/2/search?jql=${encodeURIComponent(
-        jqlQuery
-      )}&maxResults=${MAX_RESULTS}&startAt=${startAt}`;
-
-      setProgress({
-        current: allIssues.length,
-        total,
-        status: `Fetching issues ${startAt + 1} to ${Math.min(
-          startAt + MAX_RESULTS,
-          total
-        )} of ${total}...`,
-      });
-
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Basic ${btoa(
-            `${credentials.email}:${credentials.token}`
-          )}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch JIRA issues");
-      }
-
-      const data = await response.json();
-      allIssues = [...allIssues, ...(data.issues || [])];
-    }
-
-    return allIssues;
   };
 
   const handleStartExport = async (config: ExportConfiguration) => {
@@ -217,74 +106,24 @@ const Index = () => {
           status: "Preparing GitHub export...",
         });
 
-        try {
-          // Extract owner and repo from GitHub URL
-          const repoUrl = new URL(config.githubRepo);
-          const [, owner, repo] = repoUrl.pathname.split('/');
-          
-          // Create project name based on JIRA project
-          const projectName = `JIRA Export - ${config.projectKey}`;
-          
-          // Prepare the files for upload
-          const files = [];
-          
-          // Add CSV data
-          files.push({
+        const files = [
+          {
             path: `data/${config.projectKey}/issues.csv`,
-            content: btoa(csv), // Base64 encode the content
+            content: btoa(csv),
+            encoding: 'base64'
+          }
+        ];
+
+        if (config.includeAttachments) {
+          const zipContent = await zip.generateAsync({ type: "base64" });
+          files.push({
+            path: `data/${config.projectKey}/attachments.zip`,
+            content: zipContent,
             encoding: 'base64'
           });
-
-          // Add attachments if included
-          if (config.includeAttachments) {
-            const zipContent = await zip.generateAsync({ type: "base64" });
-            files.push({
-              path: `data/${config.projectKey}/attachments.zip`,
-              content: zipContent,
-              encoding: 'base64'
-            });
-          }
-
-          // Create GitHub project
-          const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/projects`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${config.githubToken}`,
-              'Accept': 'application/vnd.github.v3+json'
-            },
-            body: JSON.stringify({
-              name: projectName,
-              body: `JIRA export for project ${config.projectKey}`
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to create GitHub project');
-          }
-
-          const projectData = await response.json();
-
-          // Upload files to the repository
-          for (const file of files) {
-            await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`, {
-              method: 'PUT',
-              headers: {
-                'Authorization': `Bearer ${config.githubToken}`,
-                'Accept': 'application/vnd.github.v3+json'
-              },
-              body: JSON.stringify({
-                message: `Add ${file.path} from JIRA export`,
-                content: file.content,
-                branch: config.githubBranch
-              })
-            });
-          }
-
-          toast.success('Successfully exported to GitHub project!');
-        } catch (error) {
-          console.error('GitHub export failed:', error);
-          toast.error('Failed to export to GitHub. Please check your credentials and try again.');
         }
+
+        await handleGitHubExport(config, files, config.projectKey);
       }
 
       setIsExporting(false);
@@ -293,40 +132,6 @@ const Index = () => {
       console.error("Export failed:", error);
       toast.error("Export failed. Please check your connection and try again.");
       setIsExporting(false);
-    }
-  };
-
-  const convertToCSV = (items: any[]) => {
-    if (items.length === 0) return "";
-    
-    const headers = Object.keys(items[0]);
-    const rows = [
-      headers.join(","),
-      ...items.map(item =>
-        headers.map(header => {
-          const value = item[header];
-          if (header === 'attachments' && Array.isArray(value)) {
-            return JSON.stringify(value.map(att => att.filename)).replace(/"/g, '""');
-          }
-          return JSON.stringify(value || "").replace(/"/g, '""');
-        }).join(",")
-      ),
-    ];
-    
-    return rows.join("\n");
-  };
-
-  const downloadCSV = (csv: string, filename: string) => {
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute("download", filename);
-      link.style.visibility = "hidden";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
     }
   };
 
