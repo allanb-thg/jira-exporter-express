@@ -20,7 +20,8 @@ export const useJiraOperations = () => {
   const fetchAttachments = async (issueKey: string) => {
     if (!credentials) return [];
     
-    const url = `${CORS_PROXY}${credentials.domain}/rest/api/2/issue/${issueKey}?fields=attachment`;
+    const cleanDomain = credentials.domain.replace(/\/+$/, '');
+    const url = `${CORS_PROXY}${cleanDomain}/rest/api/2/issue/${issueKey}?fields=attachment`;
     
     const response = await fetch(url, {
       headers: {
@@ -66,15 +67,23 @@ export const useJiraOperations = () => {
   };
 
   const fetchJiraIssues = async (config: ExportConfiguration) => {
-    if (!credentials) return [];
+    if (!credentials) {
+      throw new Error("No JIRA credentials provided");
+    }
     
-    const jqlQuery = `project = ${config.projectKey} ${
+    if (!config.projectKey) {
+      throw new Error("Project key is required");
+    }
+
+    const cleanDomain = credentials.domain.replace(/\/+$/, '');
+    
+    const jqlQuery = `project = "${config.projectKey}" ${
       config.dateFrom || config.dateTo
         ? `AND created >= "${config.dateFrom}" AND created <= "${config.dateTo}"`
         : ""
     }`;
 
-    const countUrl = `${CORS_PROXY}${credentials.domain}/rest/api/2/search?jql=${encodeURIComponent(
+    const countUrl = `${CORS_PROXY}${cleanDomain}/rest/api/2/search?jql=${encodeURIComponent(
       jqlQuery
     )}&maxResults=0`;
 
@@ -88,7 +97,12 @@ export const useJiraOperations = () => {
     });
 
     if (!countResponse.ok) {
-      throw new Error("Failed to fetch JIRA issues count");
+      const errorData = await countResponse.json();
+      throw new Error(
+        `Failed to fetch JIRA issues count: ${
+          errorData.errorMessages?.[0] || 'Unknown error'
+        }`
+      );
     }
 
     const countData = await countResponse.json();
@@ -96,7 +110,7 @@ export const useJiraOperations = () => {
     let allIssues = [];
 
     for (let startAt = 0; startAt < total; startAt += MAX_RESULTS) {
-      const url = `${CORS_PROXY}${credentials.domain}/rest/api/2/search?jql=${encodeURIComponent(
+      const url = `${CORS_PROXY}${cleanDomain}/rest/api/2/search?jql=${encodeURIComponent(
         jqlQuery
       )}&maxResults=${MAX_RESULTS}&startAt=${startAt}`;
 
@@ -119,7 +133,12 @@ export const useJiraOperations = () => {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch JIRA issues");
+        const errorData = await response.json();
+        throw new Error(
+          `Failed to fetch JIRA issues: ${
+            errorData.errorMessages?.[0] || 'Unknown error'
+          }`
+        );
       }
 
       const data = await response.json();
